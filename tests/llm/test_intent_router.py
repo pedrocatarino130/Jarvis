@@ -1128,6 +1128,88 @@ def test_stop_pattern_does_not_match_stop_with_object(phrase: str):
 
 
 @pytest.mark.parametrize(
+    "phrase",
+    [
+        "para",
+        "Para.",
+        "Pára!",
+        "pare",
+        "chega",
+        "Já chega.",
+        "cala a boca",
+        "Silêncio",
+        "cancela",
+        "esquece",
+        "deixa pra lá",
+        "Tá bom, chega.",
+        "Jarvis, para.",
+    ],
+)
+def test_stop_pattern_pt_matches_standalone_stop_commands(phrase: str):
+    from jarvis.llm.intent_router import _STOP_PATTERN_PT, _normalize
+    assert _STOP_PATTERN_PT.match(_normalize(phrase)) is not None, (
+        f"{phrase!r} should have matched _STOP_PATTERN_PT"
+    )
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "para de tocar música",
+        "para onde vamos",
+        "chega de conversa",
+        "cancela o download",
+        "esquece o que eu disse",
+    ],
+)
+def test_stop_pattern_pt_does_not_match_stop_with_object(phrase: str):
+    from jarvis.llm.intent_router import _STOP_PATTERN_PT, _normalize
+    assert _STOP_PATTERN_PT.match(_normalize(phrase)) is None, (
+        f"{phrase!r} should NOT have matched _STOP_PATTERN_PT"
+    )
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["Que horas são?", "que horas são agora", "Qual é a hora?", "que hora é",
+     "me diz as horas", "Jarvis, que horas são?"],
+)
+def test_time_pattern_pt_matches(phrase: str):
+    from jarvis.llm.intent_router import _TIME_PATTERN_PT, _normalize
+    assert _TIME_PATTERN_PT.match(_normalize(phrase)) is not None
+
+
+@pytest.mark.parametrize(
+    "hour, minute, expected",
+    [
+        (0, 0, "É meia-noite."),
+        (1, 1, "É uma hora e um minuto."),
+        (12, 30, "É meio-dia e 30 minutos."),
+        (20, 5, "São 20 horas e 5 minutos."),
+        (9, 0, "São 9 horas."),
+    ],
+)
+def test_what_time_intent_pt_spells_out_time(hour: int, minute: int, expected: str):
+    import datetime
+
+    from jarvis.llm.intent_router import _what_time_intent_pt
+    fixed = datetime.datetime(2026, 9, 12, hour, minute)
+    assert _what_time_intent_pt(lambda: fixed).text == expected
+
+
+def test_router_handles_pt_stop_and_time_without_llm():
+    from jarvis.llm.intent_router import SpeakIntent, StopIntent
+    r, _llm, _conv = _make_router(fixed_time=datetime.datetime(2026, 9, 12, 20, 5))
+    assert isinstance(r._try_pattern("Chega."), StopIntent)
+    intent = r._try_pattern("Jarvis, que horas são?")
+    assert isinstance(intent, SpeakIntent)
+    assert intent.text == "São 20 horas e 5 minutos."
+    # English behaviour unchanged.
+    assert isinstance(r._try_pattern("stop"), StopIntent)
+    assert r._try_pattern("what time is it").text.endswith(", sir.")
+
+
+@pytest.mark.parametrize(
     "transcription",
     [
         "stop",

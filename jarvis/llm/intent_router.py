@@ -235,6 +235,54 @@ def _what_time_intent(
     return SpeakIntent(text=f"It's {formatted}, sir.")
 
 
+# --- pt-BR local commands ---------------------------------------------
+#
+# Checked in _try_pattern ahead of the priority table rather than added to
+# it: the table's assembled order is pinned by a golden file
+# (tests/llm/test_router_pattern_equivalence.py), and these patterns share
+# no vocabulary with the English ones, so they cannot change which English
+# pattern wins. An optional leading "jarvis," covers Whisper keeping the
+# name in the transcript. Same rule as _STOP_PATTERN: a stop word followed
+# by an object ("para de tocar música") does not match and goes to the LLM.
+_STOP_PATTERN_PT: re.Pattern[str] = re.compile(
+    r"^(?:jarvis,?\s+)?(?:p[aá]ra|pare|parar|chega|j[aá]\s+chega"
+    r"|cala(?:\s+a)?\s+boca|sil[eê]ncio|fica\s+quieto|quieto"
+    r"|cancela|cancelar|esquece|deixa\s+(?:pra|para)\s+l[aá]"
+    r"|t[aá]\s+bom,?\s+chega)$",
+    re.IGNORECASE,
+)
+
+_TIME_PATTERN_PT: re.Pattern[str] = re.compile(
+    r"^(?:jarvis,?\s+)?(?:que\s+horas\s+s[ãa]o(?:\s+agora)?"
+    r"|(?:que|qual\s+[ée])\s+(?:a\s+)?hora(?:\s+[ée])?(?:\s+agora)?"
+    r"|(?:me\s+)?(?:diz|diga|fala)\s+(?:as|que)\s+horas(?:\s+s[ãa]o)?)$",
+    re.IGNORECASE,
+)
+
+
+def _what_time_intent_pt(
+    time_provider: Callable[[], datetime.datetime],
+) -> SpeakIntent:
+    """Hours and minutes spelled out as words the pt_BR voice reads
+    naturally ("São 20 horas e 5 minutos."); "20:05" comes out as digits
+    and punctuation."""
+    now = time_provider()
+    hour, minute = now.hour, now.minute
+    if hour == 0:
+        text = "É meia-noite"
+    elif hour == 1:
+        text = "É uma hora"
+    elif hour == 12:
+        text = "É meio-dia"
+    else:
+        text = f"São {hour} horas"
+    if minute == 1:
+        text += " e um minuto"
+    elif minute > 1:
+        text += f" e {minute} minutos"
+    return SpeakIntent(text=text + ".")
+
+
 def _build_patterns(
     time_provider: Callable[[], datetime.datetime],
 ) -> list[tuple[re.Pattern, Callable[[re.Match], Intent]]]:
@@ -331,6 +379,7 @@ class IntentRouter:
         self._conv = conversation
         self._registry = registry
         self._static_tools = tools or []
+        self._time_provider = time_provider
         self._patterns = _build_patterns(time_provider)
         self._max_tool_iterations = max(1, int(max_tool_iterations))
         # Ollama does not attach ids to the tool calls it emits, so the
@@ -551,8 +600,10 @@ class IntentRouter:
         normalized = _normalize(transcription)
         if not normalized:
             return None
-        if _STOP_PATTERN.match(normalized):
+        if _STOP_PATTERN.match(normalized) or _STOP_PATTERN_PT.match(normalized):
             return StopIntent()
+        if _TIME_PATTERN_PT.match(normalized):
+            return _what_time_intent_pt(self._time_provider)
         for pattern, builder in self._patterns:
             m = pattern.match(normalized)
             if m is None:

@@ -342,6 +342,42 @@ async def test_output_device_none_passes_none_to_stream(tmp_path):
     assert kwargs["device"] is None
 
 
+async def test_output_device_none_resolves_wasapi_default_endpoint(tmp_path):
+    """With WASAPI present, "system default" opens the endpoint WASAPI reports
+    as default rather than device=None. device=None resolves to MME's default
+    while WASAPI shared settings are attached, which always fails and used to
+    push Phase 2 onto the first WASAPI output (an HDMI monitor here)."""
+    devices = [
+        {"name": "S23B550 (NVIDIA High Definition Audio)", "max_output_channels": 2,
+         "hostapi": 1, "default_samplerate": 48000.0},
+        {"name": "Headset Earphone (G435 Wireless Gaming Headset)", "max_output_channels": 2,
+         "hostapi": 1, "default_samplerate": 48000.0},
+    ]
+    hostapis = [
+        {"name": "MME", "default_output_device": -1},
+        {"name": "Windows WASAPI", "default_output_device": 1},
+    ]
+    (tmp_path / f"{REAL_VOICE_NAME}.onnx").write_bytes(b"")
+    (tmp_path / f"{REAL_VOICE_NAME}.onnx.json").write_text("{}")
+
+    def query_devices(idx=None, *args, **kwargs):
+        return devices if idx is None else devices[idx]
+
+    def query_hostapis(idx=None):
+        return hostapis if idx is None else hostapis[idx]
+
+    with patch("piper.PiperVoice") as voice_cls, \
+         patch("jarvis.audio.tts.sd") as sd_mock:
+        voice_cls.load.return_value = _make_fake_voice()
+        sd_mock.RawOutputStream.return_value = _make_fake_stream()
+        sd_mock.query_devices.side_effect = query_devices
+        sd_mock.query_hostapis.side_effect = query_hostapis
+        tts = PiperTTS(voice_name=REAL_VOICE_NAME, voices_dir=tmp_path, output_device=None)
+        await tts.load()
+    _, kwargs = sd_mock.RawOutputStream.call_args_list[0]
+    assert kwargs["device"] == 1
+
+
 async def test_output_device_int_passes_through(tmp_path):
     _, sd_mock = await _load_with_output(3, [_output_device("Speakers")], tmp_path)
     _, kwargs = sd_mock.RawOutputStream.call_args

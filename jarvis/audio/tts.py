@@ -164,6 +164,28 @@ def _mme_hostapi_index() -> int | None:
     return None
 
 
+def _system_default_output_candidates() -> list[int | None]:
+    """Phase-1 candidates for "system default": the WASAPI default endpoint
+    first, then None.
+
+    `device=None` makes PortAudio open its default host API's default device,
+    which on Windows is MME — while _wasapi_shared_settings(None) attaches
+    WASAPI settings to that open. The combination always fails ("Incompatible
+    host API specific stream info"), and the Phase-2 fallback then takes the
+    first WASAPI output in enumeration order, often an HDMI monitor instead
+    of the headset Windows is actually playing through. Asking WASAPI for its
+    default output resolves the real endpoint. Hosts without WASAPI (and the
+    MME-only test doubles) keep the plain [None]."""
+    wasapi_idx = _wasapi_hostapi_index()
+    if wasapi_idx is None:
+        return [None]
+    try:
+        idx = int(sd.query_hostapis(wasapi_idx)["default_output_device"])
+    except Exception:
+        return [None]
+    return [idx, None] if idx >= 0 else [None]
+
+
 def _wasapi_shared_settings(device_idx: int | None):
     """Return sd.WasapiSettings(exclusive=False) when the device is on the
     WASAPI host API, else None.
@@ -693,7 +715,7 @@ class PiperTTS:
         Always returns at least one entry (falls back to [None] when no
         match is found so _open_stream can try the system default)."""
         if self._output_device is None:
-            return [None]
+            return _system_default_output_candidates()
         if isinstance(self._output_device, int):
             return [self._output_device]
         target = self._output_device.lower()
@@ -723,7 +745,7 @@ class PiperTTS:
                 "configured output device %r not found; using system default",
                 self._output_device,
             )
-            return [None]
+            return _system_default_output_candidates()
 
         matched.sort(key=lambda m: (m[0], m[1], m[2]))
         cand_desc = ", ".join(f"{m[2]}:{m[3]!r}" for m in matched)

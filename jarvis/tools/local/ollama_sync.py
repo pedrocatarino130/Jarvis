@@ -33,6 +33,8 @@ def stream_chat(
         "model": model,
         "messages": messages,
         "stream": True,
+        # Same reason as OllamaClient.stream_chat: no hidden reasoning pass.
+        "think": False,
         "options": {"num_predict": max_tokens, "temperature": temperature},
     }
     parts: list[str] = []
@@ -71,6 +73,7 @@ def chat_once(
         "model": model,
         "messages": [{"role": "user", "content": user_content}],
         "stream": False,
+        "think": False,
         "options": {"num_predict": max_tokens, "temperature": temperature},
     }
     timeout = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)

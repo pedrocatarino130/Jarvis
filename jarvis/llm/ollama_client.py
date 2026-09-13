@@ -133,6 +133,7 @@ class OllamaClient:
             "messages": [{"role": "user", "content": "ready"}],
             "stream": False,
             "keep_alive": f"{self.keep_alive_seconds}s",
+            "think": False,
             "options": {"num_predict": 1},
         }
         try:
@@ -204,6 +205,11 @@ class OllamaClient:
             "messages": self._with_system_prompt(messages),
             "stream": True,
             "keep_alive": f"{self.keep_alive_seconds}s",
+            # Thinking models (qwen3, deepseek-r1) reason before the first
+            # content token when `think` is unset: ~96 s vs ~3 s for a
+            # one-sentence answer from qwen3:8b on an RTX 3060. A voice turn
+            # can't wait for that. Non-thinking models ignore `false`.
+            "think": False,
             "options": {
                 "temperature": self.temperature,
                 "num_predict": self.max_tokens,
